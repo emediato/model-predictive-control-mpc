@@ -1,0 +1,42 @@
+http://www.armadeus.org/wiki/index.php?title=Vivado_installation_on_Linux
+
+https://aleksandarhaber.com/compute-and-simulate-linear-quadratic-regulator-lqr-in-matlab-for-set-point-tracking/
+
+https://hector.paginas.ufsc.br/files/2013/12/Controle-Multivariavel-Slides-Lab.pdf
+
+http://www.foz.unioeste.br/~chsantos/ENG_CONT/Aula_01.pdf
+
+https://www.youtube.com/watch?v=0YmSfGlEXXI
+
+http://www.ae.metu.edu.tr/~ae582/09/AE582S_61OptimalEstimationExample.pdf
+https://ime.usp.br/~oliveira/ELE-Cayley-Hamilton.pdf
+
+https://www.researchgate.net/publication/268338571_Funcoes_de_Matrizes
+
+
+estimating the angle of inclination of two cars coupled by a control spring in state space
+
+1.5 Emissions and Fuel Economy
+1.5.1 Hybrid electric vehicles
+1 .5.2 Fuel cell vehicles 
+
+ Use of the LQR formulation and its Relation to H, - optimal control
+https://edisciplinas.usp.br/pluginfile.php/5349444/mod_resource/content/3/Rajesh_Rajamani_Vehicle_Dynamics_and_Con.pdf
+
+
+Sample Optimal Estimator Design
+
+http://www.ae.metu.edu.tr/~ae582/09/examples.html
+
+https://docs.ultrazohm.com/hardware/interface_powerelectronics/interface_powerelectronics.html
+
+
+Modeling of an Interleaved DC-DC Boost Converter for a Direct Model Predictive Control Strategy
+https://ieeexplore.ieee.org/document/9907331
+
+
+https://arxiv.org/abs/2308.06742
+
+
+https://dspace.mit.edu/bitstream/handle/1721.1/97053/2-14-spring-2007/contents/assignments/archive.pdf
+
