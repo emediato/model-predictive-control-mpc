@@ -1,3 +1,4 @@
+
 function un = dlqrcon(A,B,Q,R,P,N,Sx,bx,Su,bu,Sf,bf,x0,xbar,ubar)
 
 Rn = R; Sun = Su;
@@ -7,8 +8,8 @@ for i = 2:N
     Sun = blkdiag(Sun,Su);
     An = [An;A^i];
 end
+size(An)
 bun = repmat(bu,N,1);
-
 n = size(B,1);
 p = size(B,2);
 
@@ -36,6 +37,11 @@ end
 Qn = blkdiag(Qn,P);
 Sxn = blkdiag(Sxn,Sf);
 bxn = [repmat(bx,N-1,1);bf];
+size(bxn)
+size(Sxn)
+size(bun)
+size(Sxn*An*x0)
+size(bxn - Sxn*An*x0)
 
 % Uso do quadprog
 Aqp = [Sxn*Bn;Sun];
