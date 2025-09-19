@@ -1,0 +1,26 @@
+function [sys,sfun_state0,str,ts] = mpcSfun(t,sfun_state,inputs,flag,A,B,T,Q,R,P,N,Sx,bx,Su,bu,Sf,bf,xbar,ubar)
+
+switch flag
+    case 0
+
+
+        % Inicializa¸c~ao da S-function
+        n = size(B,1); p = size(B,2);
+        [sys,sfun_state0,str,ts] = mdlInitializeSizes(T,p,n);
+
+
+    case 2
+        sys = mdlUpdate(t);
+    case {1,4,9}
+        sys = []; % N~ao usado
+
+    case 3
+        % C´alculo da sa´ıda da S-function
+        xk = inputs; % Entrada da S-function: x(kT)
+        unk = dlqrcon(A,B,Q,R,P,N,Sx,bx,Su,bu,Sf,bf,xk,xbar,ubar);
+        p = size(B,2);
+        sys = unk(1:p); % Sa´ıda da S-function: u(kT)
+
+
+
+end
