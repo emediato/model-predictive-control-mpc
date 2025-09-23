@@ -1,5 +1,3 @@
-% https://github.com/treezao/Livro_mpc_codes/blob/main/Volume1/Capitulo3-DMC/EstudoDeCaso2/estudo1_dmc.m
-
 % Codigo que implementa DMC
 %https://github.com/treezao/Livro_mpc_codes/blob/main/Volume1/Capitulo3-DMC/Exemplo3.22/caso_dmc.m
 clc;
@@ -20,7 +18,9 @@ Nss = 70;
 t_final = 14; % Choose appropriate final time
 t = linspace(0, t_final, Nss); % Nss equally spaced time points
 
+Ts = 10; % Periodo de amostragem do processo em segundos
 
+Gcoef = step(G_tf,Ts:Ts:Nss*Ts); % coeficientes da resposta ao degrau
 
 
 figure(1)
@@ -36,6 +36,13 @@ ylabel('Amplitude')
 fprintf('Number of elements in response: %d\n', length(y));
 fprintf('Number of time points: %d\n', length(t));
 
+Gz = G_tf;
+
+num = Gz.num{1}; % numerador do modelo discreto
+den = Gz.den{1}; % denominador do modelo discreto
+na = size(den,2)-1; % ordem do denominador
+nb = size(num,2)-2; % ordem do numerador
+dd = Gz.inputdelay; % atraso discreto
 
 num_coeffs = G_tf.Numerator;
 den_coeffs = G_tf.Denominator;
@@ -171,18 +178,20 @@ end
 delta = 1; % ponderação do erro futuro
 lambda = 1; % ponderação do esforço de controle
 
-%G = G(N1:end,:);
-% 
-% Qy = delta*eye(N2-N1+1);
-% Qu = lambda*eye(Nu);
-% 
-% Kdmc = inv(G'*Qy*G+Qu)*G'*Qy
-% 
-% Kdmc1 = Kdmc(1,:);
+G_github_book = G_correct(N1:end,:);
+
+Qy = delta*eye(N2-N1+1);
+Qu = lambda*eye(Nu);
+
+Kdmc = inv(G_github_book'*Qy*G_github_book+Qu)*G_github_book'*Qy
+
+Kdmc1 = Kdmc(1,:);
 
 %%% calcula a matriz H para o cálculo da resposta livre no caso DMC
 H1 = [];
 H2 = [];
+
+Ylivre = ones(Nss,1)*0; % 0 é o valor inicial da saída do sistema
 
 
 for i=N1(1):N2(1)
@@ -200,6 +209,8 @@ H = H1-H2;
 
 
 %% inicialização vetores
+duAnt = 0;% incremento de controle passado
+uAnt = 0; % sinal de controle passado
 
 nin = Nss+1;
 % nit = 40 + nin; % número de iterações da simulação
@@ -210,63 +221,92 @@ nit = round(400/Ts) + nin; % número de iterações da simulação
 entradas = 0*ones(nit,1); % vetor o sinal de controle;
 du = zeros(nit,1); % vetor de incrementos de controle
 
-saidas = ones(nit,1); % vetor com as saídas do sistema
+saidas = 0*ones(nit,1); % vetor com as saídas do sistema
 
-perts = zeros(nit,2); % vetor com as perturbações do sistema
-perts(nin+round(200/Ts):end) = -.03;
+perts = zeros(nit,1); % vetor com as perturbações do sistema
+perts(nin+150:end) = 0;
 
-refs = ones(nit,1); % vetor de referências
+refs = 0*ones(nit,1); % vetor de referências
 
-Cobar = 1.5;
+refs(nin+50:nit) = 100;
+refs(nin+250:nit) = 200;
+refs(nin+450:nit) = 300;
+refs(nin+650:nit) = 200;
+refs(nin+850:end) = 100;
 
-refs(nin+round(50/Ts):end) = 0.1+Cobar;
 
 erro = zeros(nit,1); % vetor de erros
 
-%% simulação com referencia futura
-for i = nin:nit
-    %% simulação do modelo processo
-    saidas(i) = simModelo(saidas(i-1),entradas(i-1)+perts(i-1),Ts);
-    
-    erro(i) = refs(i)-saidas(i);
-    %% Controlador
-    
-    %%% resposta livre
-    f = H*du(i-1:-1:i-Nss) + saidas(i);
-    
-    %%% referências
-    R = ones(N2-N1+1,1)*refs(i);
-    
-    %%% calculo do incremento de controle ótimo    
-    % com restrições
-    fqp = fqp1*(R-f);
-    
-    rbar = [repelem(umax-entradas(i-1),Nu)';
-             repelem(entradas(i-1)-umin,Nu)';
-             ymax-f;
-             -ymin+f];
-    [X,FVAL,EXITFLAG] = quadprog(Hqp,fqp,Rbar,rbar,[],[],LB,UB);
-    
-    %%% caso dê infactível, remover a restrição na saída
-    if(EXITFLAG==-2)
-        rbar = [repelem(umax-entradas(i-1),Nu)';
-                 repelem(entradas(i-1)-umin,Nu)'];
-        X = quadprog(Hqp,fqp,Rbar(1:2*Nu,:),rbar,[],[],LB,UB);
-    end
+Ylivre = ones(Nss,1)*0; % 0 é o valor inicial da saída do sistema
 
-    du(i) = X(1);
-    
+%G=G_github_book;
+%%% obtenção da matriz de ganhos K
+x = (G'*G+eye(Nu)*lambda)
+xi = inv(G'*G+eye(Nu)*lambda)
+Kdmc = xi*G'
+
+
+%% simulação com referencia futura
+for i = nin:nit-N2-1
+    % simulação do modelo processo
+    % saidas(i) = -den(2:end)*saidas(i-1:-1:i-na) + num*(entradas(i-dd:-1:i-nb-dd-1) + perts(i-dd:-1:i-dd-nb-1));
+    % 
+    % erro(i) = refs(i)-saidas(i);
+    % %% Controlador
+    % 
+    % %%% resposta livre
+    % f = H*du(i-1:-1:i-Nss) + saidas(i);
+    % 
+    % %%% referências
+    % R = ones(N2-N1+1,1)*refs(i);
+    % 
     
     % sem restrições
 %     du(i) = Kdmc1*(R-f);
     
     %%% aplicar no sistema
-    entradas(i) = entradas(i-1)+du(i);    
+    % entradas(i) = entradas(i-1)+du(i);   
+
+    %% simulação do modelo processo
+    saidas(i) = -den(2:end)*saidas(i-1:-1:i-na) + num*(entradas(i-dd:-1:i-nb-dd-1) + perts(i-dd:-1:i-dd-nb-1));
+    
+    erro(i) = refs(i)-saidas(i);
+    
+    %% Controlador
+    
+    Ylivre = Ylivre + Gcoef(1:Nss,1)*duAnt;
+    
+    eta = saidas(i)-Ylivre(1); %%% erro de predição
+    
+    Ylivre(1:end-1) = Ylivre(2:end); %%% deslocamento do vetor
+    
+    %%% resposta livre
+    f = Ylivre(N1:N2,1)+eta;
+    
+    %%% referências
+    R = ones(N2-N1+1,1)*refs(i);
+    
+    %%% calculo do incremento de controle ótimo    
+    duAtual = Kdmc1*(R-f);
+    
+    %%% calculo da ação de controle real
+    uAtual = duAtual + uAnt;
+    
+    %%% aplicar no sistema
+    entradas(i) = uAtual;
+    
+    %%% atualização
+    
+    uAnt = uAtual;
+    duAnt = duAtual;
 end
 
 %% plots
 t = ((nin:nit)-nin)*Ts;
 vx = nin:nit;
+
+tamlinha=3;
+tamletra=12;
 
 cores = gray(4);
 cores = cores(1:end-1,:);
@@ -298,7 +338,7 @@ xlabel('Tempo (s)','FontSize', tamletra)
 grid on
 set(h, 'FontSize', tamletra);
 
-hf.Position = tamfigura;
+
 hl.Position = [0.7370 0.6532 0.2054 0.1231];
 
 
@@ -314,33 +354,34 @@ y_new = repmat([0]',len-1,1);
 eta_y = repmat([0]',len-1,1);
 
 
-for k = 1:N
-    %Atualiza o vetor de incremento de controle aplicados no processo com o
-    %valor atual calculado
-
-    delta_u(k) = y(k+1) / g(k);
-
-    % resposta ao impulso
-    % h(k) = g(k) - g(k-1);
-    %h(k) = g(k) - g(k-1)
-    h_impulse_delta(k+1) = g(k+1) - g(k); % delta_g
-
-    % resposta do sistema - pagina 47
-    y_new(k) = (h_impulse_delta(k) * delta_u(k));
-
-    y(k+1) = y_new(k);
-
-    eta_y(k) = y(k+1) - y(1);
-end
-
-
-
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% page 53
-% delta_u (k+j-i) = y(k+j) / gi
-deulta_u_0 = y(2)/g(1);
-deulta_u_1 = y(3)/g(2);
+% 
+% for k = 1:N
+%     %Atualiza o vetor de incremento de controle aplicados no processo com o
+%     %valor atual calculado
+% 
+%     delta_u(k) = y(k+1) / g(k);
+% 
+%     % resposta ao impulso
+%     % h(k) = g(k) - g(k-1);
+%     %h(k) = g(k) - g(k-1)
+%     h_impulse_delta(k+1) = g(k+1) - g(k); % delta_g
+% 
+%     % resposta do sistema - pagina 47
+%     y_new(k) = (h_impulse_delta(k) * delta_u(k));
+% 
+%     y(k+1) = y_new(k);
+% 
+%     eta_y(k) = y(k+1) - y(1);
+% end
+% 
+% 
+% 
+% 
+% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% % page 53
+% % delta_u (k+j-i) = y(k+j) / gi
+% deulta_u_0 = y(2)/g(1);
+% deulta_u_1 = y(3)/g(2);
 
 
 % ^y (k+j|k) = delta_u (k+j-i) * gi + 
