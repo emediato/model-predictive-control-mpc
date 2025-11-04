@@ -11,6 +11,8 @@ https://github.com/treezao/Livro_mpc_codes/tree/main/Volume1/Capitulo4-GPC
 https://www.youtube.com/watch?v=rIer4hAUBfk
 
 ## space vector modulation
+sinusoidal https://www.youtube.com/watch?v=7kytiZ7P4Rk 
+
 https://www.youtube.com/watch?v=kY6v8PIFePo
 
 Vdc = ...;        % DC link voltage
