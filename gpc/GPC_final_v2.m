@@ -1,320 +1,548 @@
-%% VSI + LR + LC Filter State-Space Model for GPC with PWM Integration
-% This script implements GPC control with PWM modulation for a 3-phase VSI
+%% MASTER GPC + PWM CONTROL FOR 3-PHASE VSI - DUAL αβ TRACKING FROM DQ
+% ═══════════════════════════════════════════════════════════════════════
+% CORRIGIDO: GPC agora rastreia AMBOS α e β componentes
+% Dois controladores GPC independentes: um para α, outro para β
+% ═══════════════════════════════════════════════════════════════════════
 clear; clc; close all;
 
-%% Step 1: Clark Transformation Matrix
-K = 2/3 * [1 -1/2 -1/2; 0 sqrt(3)/2 -sqrt(3)/2];
-K_inv = [1 0; -1/2 sqrt(3)/2; -1/2 -sqrt(3)/2]; % Inverse Clark
-
+%% Step 1: Clark Transformation Matrices
+K_clark = 2/3 * [1 -1/2 -1/2; 0 sqrt(3)/2 -sqrt(3)/2];
+K_clark_inv = [1 0; -1/2 sqrt(3)/2; -1/2 -sqrt(3)/2];
 I_2 = eye(2);
 
 %% Step 2: System Parameters
-% Hardware parameters
-Vdc = 400;              % DC link voltage [V]
+Vdc = 60;               % DC link voltage [V]
 R = 3.5;                % Resistance [Ω]
-L = 0.0025;             % Inductance [H]
+L = 0.1;                % Inductance [H]
 
-% LC Filter Parameters (for more accurate model)
+% LC Filter Parameters
 Rf = 0.1;               % Filter resistance [Ω]
 Lf = 1e-3;              % Filter inductance [H]
 Cf = 10e-6;             % Filter capacitance [F]
 
-% Sampling and switching frequencies
+% Time parameters
 f_sw = 10e3;            % Switching frequency [Hz]
 f_fund = 60;            % Fundamental frequency [Hz]
 Ts = 1/f_sw;            % Sampling time [s]
 Tsim = 0.1;             % Simulation time [s]
 
+fprintf('╔═══════════════════════════════════════════════════════╗\n');
+fprintf('║  GPC + PWM CONTROL WITH DUAL αβ TRACKING (FROM DQ)   ║\n');
+fprintf('╚═══════════════════════════════════════════════════════╝\n\n');
+
 fprintf('=== SYSTEM PARAMETERS ===\n');
 fprintf('Vdc = %.0f V, R = %.1f Ω, L = %.4f H\n', Vdc, R, L);
-fprintf('f_sw = %.1f kHz, f_fund = %.0f Hz, Ts = %.6f s\n\n', f_sw/1e3, f_fund, Ts);
+fprintf('f_sw = %.1f kHz, f_fund = %.0f Hz\n', f_sw/1e3, f_fund);
+fprintf('Ts = %.6f s, Tsim = %.2f s\n\n', Ts, Tsim);
 
-%% Step 3: Discrete State-Space Model for GPC
-% Continuous-time matrices for LC filter
-A1 = [-Rf/Lf,  -1/Lf;
-       1/Cf,    0   ];
-B1 = [1/Lf; 0];
-C1 = [1 0];
-D1 = 0;
+%% Step 3: Time Vector
+t = 0:Ts:Tsim;
+nit = length(t);
+nin = 20;
 
-% Discretize using exact method
-sysc = ss(A1, B1, C1, D1);
+fprintf('Simulation: nit=%d samples (%.2f ms)\n\n', nit, Tsim*1000);
+
+%% Step 4: Discrete State-Space Model
+% Continuous model for LC filter
+A_cont = [-Rf/Lf,  -1/Lf;
+           1/Cf,    0   ];
+B_cont = [1/Lf; 0];
+C_cont = [1 0];
+D_cont = 0;
+
+% Discretize
+sysc = ss(A_cont, B_cont, C_cont, D_cont);
 sysd = c2d(sysc, Ts, 'zoh');
-Ad = sysd.A;
-Bd = sysd.B;
 
-% Extract discrete transfer function for GPC
+% Extract transfer function
 Tz = tf(sysd);
-A = cell2mat(Tz.den);   % A(z^-1) coefficients
-B = cell2mat(Tz.num);   % B(z^-1) coefficients
+A_tf = cell2mat(Tz.den);   % A(z^-1)
+B_tf = cell2mat(Tz.num);   % B(z^-1)
 
-fprintf('Discrete Model:\n');
-fprintf('A = [%.6f, %.6f]\n', A);
-fprintf('B = [%.6f, %.6f]\n\n', B);
+fprintf('=== DISCRETE MODEL ===\n');
+fprintf('A(z⁻¹) = [%.6f, %.6f]\n', A_tf);
+fprintf('B(z⁻¹) = [%.6f, %.6f]\n\n', B_tf);
 
-%% Step 4: GPC Parameters
-d = 0;                  % Input delay
-N1 = 1;                 % Minimum prediction horizon
-N2 = 10;                % Maximum prediction horizon  
+%% Step 5: GPC Parameters
+delta = 1;              % Output weight
+lambda = 0.01;          % Control weight
+
+d = 0;                  % Delay
+N1 = 1;                 % Min horizon
+N2 = 10;                % Max horizon
 Nu = 3;                 % Control horizon
-N = N2 - N1 + 1;        % Prediction horizon length
+N = N2 - N1 + 1;        % Prediction length
 
-delta = 1;              % Output error weight
-lambda = 0.1;           % Control effort weight
+na = length(A_tf) - 1;
+nb = length(B_tf) - 1;
 
-fprintf('=== GPC PARAMETERS ===\n');
-fprintf('N1=%d, N2=%d, Nu=%d, N=%d\n', N1, N2, Nu, N);
-fprintf('delta=%.1f, lambda=%.1f\n\n', delta, lambda);
+Bq = [0.001];           % Disturbance model
+dq = 0;
 
-%% Step 5: Build GPC Matrices
-na = length(A) - 1;
-nb = length(B) - 1;
+fprintf('=== GPC CONFIGURATION ===\n');
+fprintf('Horizons: N1=%d, N2=%d, Nu=%d → N=%d\n', N1, N2, Nu, N);
+fprintf('Model orders: na=%d, nb=%d, d=%d\n', na, nb, d);
+fprintf('Weights: δ=%.1f, λ=%.3f\n\n', delta, lambda);
 
+%% Step 6: Build GPC Matrices
 % Incorporate delay
-Btil = conv(B, [zeros(1,d) 1]);
+Btil = conv(B_tf, [zeros(1,d) 1]);
+Bqtil = conv(Bq, [zeros(1,dq) 1]);
 
-% Calculate Diophantine polynomials
-[E, F] = diofantina(conv(A, [1 -1]), N1, N2);
+% Diophantine equation
+[E, F_poly] = diofantina(conv(A_tf, [1 -1]), N1, N2);
 
-% Build dynamic matrix G
+% Dynamic matrices
 G = zeros(N, Nu);
 H = zeros(N, nb + d);
+Gq = zeros(N, 0);  % Not used
+Hq = zeros(N, 0);  % Not used
 
 for i = N1:N2
-    j = i - N1 + 1;
-    EjB = conv(E(j, 1:i), Btil);
+    EjB = conv(E(i-N1+1, 1:i), Btil);
     
-    % Fill G matrix (future control actions)
-    if i <= Nu
-        G(j, 1:i) = EjB(i:-1:1);
-    else
-        G(j, :) = EjB(i:-1:i-Nu+1);
-    end
+    G(i-N1+1, 1:min(i, Nu)) = EjB(i:-1:max(1, i-Nu+1));
     
-    % Fill H matrix (past control actions)
-    if length(EjB) > i
-        H(j, 1:min(nb+d, length(EjB)-i)) = EjB(i+1:end);
+    if i < length(EjB)
+        H(i-N1+1, 1:min(nb+d, length(EjB)-i)) = EjB(i+1:min(end, i+nb+d));
     end
 end
 
-% GPC gain calculation
-Qe = delta * eye(N);
+G = G(:, 1:Nu);
+
+fprintf('=== GPC MATRICES ===\n');
+fprintf('G: %dx%d, H: %dx%d, F: %dx%d\n', size(G), size(H), size(F_poly));
+
+%% Step 7: GPC Gain Calculation
 Qu = lambda * eye(Nu);
-K_gpc = (G' * Qe * G + Qu) \ (G' * Qe);
-K_gpc1 = K_gpc(1, :);  % First row for current control
+Qe = delta * eye(N);
 
-fprintf('Matrix Dimensions:\n');
-fprintf('G: %dx%d, K_gpc: %dx%d\n\n', size(G,1), size(G,2), size(K_gpc,1), size(K_gpc,2));
+K_gpc = (G'*Qe*G + Qu) \ (G'*Qe);
+K_gpc1 = K_gpc(1, :);  % First row (receding horizon)
 
-%% Step 6: Simulation Setup
-t = 0:Ts:Tsim;
+fprintf('K_gpc: %dx%d\n', size(K_gpc));
+fprintf('K_gpc1 (used): %dx%d\n\n', size(K_gpc1));
 
-% nit = length(t);        % Number of iterations
-% nin = max(na, nb) + 5;  % Initial samples for settling
+%% Step 8: Initialize Variables
+% ═══════════════════════════════════════════════════════════════════════
+% DUAL TRACKING: Separate variables for α and β components
+% ═══════════════════════════════════════════════════════════════════════
 
-nin = 5;
-nit = 100 + nin; % número de iterações da simulação
+% α-axis variables
+saidas_alpha = zeros(nit, 1);       % α output
+entradas_alpha = zeros(nit, 1);     % α control
+du_alpha = zeros(nit, 1);           % α increments
+refs_alpha = zeros(nit, 1);         % α reference
 
-fprintf('=== SIMULATION SETUP ===\n');
-fprintf('nit=%d, nin=%d\n\n', nit, nin);
+% β-axis variables
+saidas_beta = zeros(nit, 1);        % β output
+entradas_beta = zeros(nit, 1);      % β control
+du_beta = zeros(nit, 1);            % β increments
+refs_beta = zeros(nit, 1);          % β reference
 
-% Initialize arrays with proper dimensions
-saidas = zeros(nit, 1);     % System outputs
-entradas = zeros(nit, 1);   % Control inputs  
-du = zeros(nit, 1);         % Control increments
-refs = zeros(nit, 1);       % References
+% DQ references
+Vd_ref = zeros(nit, 1);
+Vq_ref = zeros(nit, 1);
+
+% αβ references (from DQ)
+V_alpha_ref = zeros(nit, 1);
+V_beta_ref = zeros(nit, 1);
 
 % PWM signals
 pwm_a = zeros(nit, 1);
-pwm_b = zeros(nit, 1); 
+pwm_b = zeros(nit, 1);
 pwm_c = zeros(nit, 1);
 
-% Current references in αβ frame
-Iref_alpha = zeros(nit, 1);
-Iref_beta = zeros(nit, 1);
-
-% Carrier signal for PWM
+% Carrier
 carrier = sawtooth(2*pi*f_sw*t, 0.5);
 
-%% Step 7: Reference Generation
-% Generate sinusoidal current references
-I_ref_peak = 5;  % Peak current reference [A]
+%% Step 9: Generate DQ References
+fprintf('Generating DQ references...\n');
+
+V_ref_peak = 5;         % Peak voltage [V]
+f_ref = 60;             % Reference frequency [Hz]
 
 for k = 1:nit
     if k > nin
-        % Step reference for testing
-        refs(k) = I_ref_peak;
+        % Vd = constant (DC), Vq = 0 for simple test
+        Vd_ref(k) = V_ref_peak;
+        Vq_ref(k) = 0;
         
-        % For sinusoidal tracking:
-        % refs(k) = I_ref_peak * sin(2*pi*f_fund*t(k));
+        % For rotating reference:
+        % Vd_ref(k) = V_ref_peak * cos(2*pi*10*t(k));
+        % Vq_ref(k) = V_ref_peak * sin(2*pi*10*t(k));
     end
 end
 
-% Transform to αβ frame (for current control)
+% Inverse Park transformation: DQ → αβ
 for k = 1:nit
-    Iref_alpha(k) = refs(k);  % For simplicity, use α component only
-    Iref_beta(k) = 0;         % Zero β component for balanced operation
+    theta = 2*pi*f_ref*t(k);
+    
+    % [α]   [cos(θ)  -sin(θ)] [d]
+    % [β] = [sin(θ)   cos(θ)] [q]
+    V_alpha_ref(k) = Vd_ref(k)*cos(theta) - Vq_ref(k)*sin(theta);
+    V_beta_ref(k)  = Vd_ref(k)*sin(theta) + Vq_ref(k)*cos(theta);
+    
+    % Set GPC references
+    refs_alpha(k) = V_alpha_ref(k);
+    refs_beta(k)  = V_beta_ref(k);
 end
 
-%% Step 8: Main Simulation Loop
-fprintf('Starting GPC + PWM simulation...\n');
+fprintf('DQ → αβ transformation complete.\n');
+fprintf('  Max V_α: %.2f V, Max V_β: %.2f V\n\n', ...
+        max(abs(V_alpha_ref)), max(abs(V_beta_ref)));
+
+%% Step 10: Main Simulation Loop with DUAL GPC
+fprintf('Starting DUAL GPC + PWM simulation...\n');
 
 for k = nin:nit-1
-    %% Step 8.1: System Model (Plant Simulation)
-    % Simulate the discrete system
-    past_outputs = saidas(max(1,k-na):k);
-    past_inputs = entradas(max(1,k-nb-d):k-1);
     
-    % Pad with zeros if necessary
-    if length(past_outputs) < na+1
-        past_outputs = [zeros(na+1-length(past_outputs), 1); past_outputs];
-    end
-    if length(past_inputs) < nb+d+1
-        past_inputs = [zeros(nb+d+1-length(past_inputs), 1); past_inputs];
-    end
+    %% ═══════════════════════════════════════════════════════════════════
+    %  PLANTA: Simula ambos os canais α e β independentemente
+    %% ═══════════════════════════════════════════════════════════════════
     
-    % System output (simplified model)
-    saidas(k+1) = -A(2:end) * past_outputs(end-1:-1:end-na)' + ...
-                   B * past_inputs(end:-1:end-nb)';
-    
-    %% Step 8.2: GPC Control Law
-    % Reference vector
-    R = refs(k) * ones(N, 1);
-    
-    % Free response calculation
-    f = zeros(N, 1);
-    current_output = saidas(k);
-    
-    % Simplified free response (using current output)
-    for j = 1:N
-        f(j) = current_output;  % Basic prediction - can be enhanced
+    if k > na && k > nb+d
+        % α-axis plant
+        past_outputs_alpha = saidas_alpha(k:-1:k-na);
+        past_inputs_alpha = entradas_alpha(k-d:-1:k-nb-d);
+        saidas_alpha(k+1) = -A_tf(2:end) * past_outputs_alpha(2:end) + ...
+                             B_tf * past_inputs_alpha;
+        
+        % β-axis plant
+        past_outputs_beta = saidas_beta(k:-1:k-na);
+        past_inputs_beta = entradas_beta(k-d:-1:k-nb-d);
+        saidas_beta(k+1) = -A_tf(2:end) * past_outputs_beta(2:end) + ...
+                            B_tf * past_inputs_beta;
+    else
+        saidas_alpha(k+1) = saidas_alpha(k);
+        saidas_beta(k+1) = saidas_beta(k);
     end
     
-    % Add contribution from past control actions if H is not empty
-    if ~isempty(H) && k > nb+d
-        past_du = du(k-1:-1:max(1,k-nb-d));
-        if length(past_du) < nb+d
-            past_du = [past_du; zeros(nb+d-length(past_du), 1)];
+    % Measurement noise
+    noise_alpha = 0.01 * randn;
+    noise_beta = 0.01 * randn;
+    
+    %% ═══════════════════════════════════════════════════════════════════
+    %  GPC CONTROLADOR ALPHA (Eixo α)
+    %% ═══════════════════════════════════════════════════════════════════
+    
+    if k > N2
+        % Reference vector
+        R_alpha = refs_alpha(k) * ones(N, 1);
+        
+        % Free response
+        f_alpha = zeros(N, 1);
+        for j = 1:N
+            if j <= size(F_poly, 1)
+                f_alpha(j) = F_poly(j, :) * saidas_alpha(k:-1:max(1, k-na));
+            else
+                f_alpha(j) = saidas_alpha(k);
+            end
         end
-        f = f + H * past_du;
+        
+        % Add past control increments
+        if ~isempty(H) && k > nb+d
+            past_du_alpha = du_alpha(k-1:-1:max(1, k-nb-d));
+            if length(past_du_alpha) < size(H, 2)
+                past_du_alpha = [past_du_alpha; zeros(size(H,2)-length(past_du_alpha), 1)];
+            end
+            for j = 1:N
+                f_alpha(j) = f_alpha(j) + H(j, :) * past_du_alpha;
+            end
+        end
+        
+        % Control law
+        du_alpha(k) = K_gpc1 * (R_alpha - f_alpha);
+        entradas_alpha(k) = entradas_alpha(k-1) + du_alpha(k);
+        
+        % Saturation
+        max_v = Vdc / sqrt(3);
+        entradas_alpha(k) = max(min(entradas_alpha(k), max_v), -max_v);
+    else
+        entradas_alpha(k) = refs_alpha(k);
+        du_alpha(k) = 0;
     end
     
-    % Control increment calculation
-    du(k) = K_gpc1 * (R - f);
-    entradas(k) = entradas(k-1) + du(k);
+    %% ═══════════════════════════════════════════════════════════════════
+    %  GPC CONTROLADOR BETA (Eixo β)
+    %% ═══════════════════════════════════════════════════════════════════
     
-    %% Step 8.3: Space Vector Modulation
-    V_ref = entradas(k);  % Voltage reference from GPC
+    if k > N2
+        % Reference vector
+        R_beta = refs_beta(k) * ones(N, 1);
+        
+        % Free response
+        f_beta = zeros(N, 1);
+        for j = 1:N
+            if j <= size(F_poly, 1)
+                f_beta(j) = F_poly(j, :) * saidas_beta(k:-1:max(1, k-na));
+            else
+                f_beta(j) = saidas_beta(k);
+            end
+        end
+        
+        % Add past control increments
+        if ~isempty(H) && k > nb+d
+            past_du_beta = du_beta(k-1:-1:max(1, k-nb-d));
+            if length(past_du_beta) < size(H, 2)
+                past_du_beta = [past_du_beta; zeros(size(H,2)-length(past_du_beta), 1)];
+            end
+            for j = 1:N
+                f_beta(j) = f_beta(j) + H(j, :) * past_du_beta;
+            end
+        end
+        
+        % Control law
+        du_beta(k) = K_gpc1 * (R_beta - f_beta);
+        entradas_beta(k) = entradas_beta(k-1) + du_beta(k);
+        
+        % Saturation
+        max_v = Vdc / sqrt(3);
+        entradas_beta(k) = max(min(entradas_beta(k), max_v), -max_v);
+    else
+        entradas_beta(k) = refs_beta(k);
+        du_beta(k) = 0;
+    end
     
-    % Normalize voltage reference
-    V_mag = min(abs(V_ref), Vdc/sqrt(3)) * sign(V_ref);
-    theta = 0;  % Assume zero angle for simplicity
+    %% ═══════════════════════════════════════════════════════════════════
+    %  SPACE VECTOR MODULATION (SVM)
+    %  Usa AMBOS V_α e V_β dos controladores GPC
+    %% ═══════════════════════════════════════════════════════════════════
     
-    % SVM calculations
-    sector = 1;  % Simplified - always sector 1
-    alpha = 0;
+    % Voltage vector in complex form
+    V_ref_complex = entradas_alpha(k) + 1j*entradas_beta(k);
     
-    T1 = Ts * V_mag * sin(pi/3 - alpha) / Vdc;
-    T2 = Ts * V_mag * sin(alpha) / Vdc;
+    % Magnitude and angle
+    V_mag = abs(V_ref_complex);
+    theta_svm = angle(V_ref_complex);
+    theta_svm = mod(theta_svm, 2*pi);
+    
+    % Identify sector (1-6)
+    sector = floor(theta_svm / (pi/3)) + 1;
+    if sector > 6, sector = 6; end
+    
+    % Switching times
+    alpha_angle = mod(theta_svm, pi/3);
+    
+    T1 = Ts * V_mag * sin(pi/3 - alpha_angle) / Vdc;
+    T2 = Ts * V_mag * sin(alpha_angle) / Vdc;
     T0 = Ts - T1 - T2;
     
-    % Duty cycles for sector 1
-    Ta = (T1 + T2 + T0/2) / Ts;
-    Tb = (T2 + T0/2) / Ts;
-    Tc = T0/2 / Ts;
+    % Handle overmodulation
+    if T0 < 0
+        T_total = T1 + T2;
+        T1 = T1 * Ts / T_total;
+        T2 = T2 * Ts / T_total;
+        T0 = 0;
+    end
     
-    % Apply PWM
-    pwm_a(k) = double(Ta > (carrier(k) + 1)/2);
-    pwm_b(k) = double(Tb > (carrier(k) + 1)/2);
-    pwm_c(k) = double(Tc > (carrier(k) + 1)/2);
+    % Duty cycles based on sector
+    switch sector
+        case 1
+            Ta = (T1 + T2 + T0/2) / Ts;
+            Tb = (T2 + T0/2) / Ts;
+            Tc = T0/2 / Ts;
+        case 2
+            Ta = (T1 + T0/2) / Ts;
+            Tb = (T1 + T2 + T0/2) / Ts;
+            Tc = T0/2 / Ts;
+        case 3
+            Ta = T0/2 / Ts;
+            Tb = (T1 + T2 + T0/2) / Ts;
+            Tc = (T2 + T0/2) / Ts;
+        case 4
+            Ta = T0/2 / Ts;
+            Tb = (T1 + T0/2) / Ts;
+            Tc = (T1 + T2 + T0/2) / Ts;
+        case 5
+            Ta = (T2 + T0/2) / Ts;
+            Tb = T0/2 / Ts;
+            Tc = (T1 + T2 + T0/2) / Ts;
+        case 6
+            Ta = (T1 + T2 + T0/2) / Ts;
+            Tb = T0/2 / Ts;
+            Tc = (T1 + T0/2) / Ts;
+    end
     
-    % Optional: Add measurement noise
-    measurement_noise = 0.01 * randn;
-    saidas(k+1) = saidas(k+1) + measurement_noise;
+    % Limit duty cycles
+    Ta = max(min(Ta, 1), 0);
+    Tb = max(min(Tb, 1), 0);
+    Tc = max(min(Tc, 1), 0);
+    
+    % PWM signals
+    pwm_a(k) = Ta;
+    pwm_b(k) = Tb;
+    pwm_c(k) = Tc;
 end
 
-fprintf('Simulation completed!\n');
+fprintf('Simulation completed!\n\n');
 
-%% Step 9: Results Analysis and Plotting
-fprintf('\n=== RESULTS ANALYSIS ===\n');
+%% Step 11: Performance Analysis
+fprintf('═══════════════════════════════════════════════════════\n');
+fprintf('           PERFORMANCE ANALYSIS                        \n');
+fprintf('═══════════════════════════════════════════════════════\n\n');
 
-% Calculate performance metrics
-steady_start = find(t > 0.02, 1);
-steady_state_error = mean(abs(saidas(steady_start:end) - refs(steady_start:end)));
-control_effort = mean(abs(du(nin:end)));
+steady_start = find(t > 0.03, 1);
 
-fprintf('Steady-state error: %.4f\n', steady_state_error);
-fprintf('Average control effort: %.4f\n', control_effort);
+% α-axis metrics
+error_alpha = saidas_alpha - refs_alpha;
+rms_error_alpha = rms(error_alpha(steady_start:end));
+tracking_alpha = 100 * (1 - rms_error_alpha / rms(refs_alpha(steady_start:end)));
 
-% Plot results
-figure('Position', [100, 100, 1200, 800]);
+% β-axis metrics
+error_beta = saidas_beta - refs_beta;
+rms_error_beta = rms(error_beta(steady_start:end));
+tracking_beta = 100 * (1 - rms_error_beta / rms(refs_beta(steady_start:end)));
 
-% Subplot 1: Output tracking
-subplot(3,2,1);
-plot(t, saidas, 'b-', 'LineWidth', 2); hold on;
-plot(t, refs, 'r--', 'LineWidth', 2);
-title('GPC Output Tracking');
-xlabel('Time [s]'); ylabel('Output');
-legend('System Output', 'Reference', 'Location', 'best');
+% Combined metrics
+total_error = sqrt(error_alpha.^2 + error_beta.^2);
+rms_total = rms(total_error(steady_start:end));
+
+fprintf('╔═══════════════════════════════════════════════════════╗\n');
+fprintf('║              α-AXIS PERFORMANCE                       ║\n');
+fprintf('╠═══════════════════════════════════════════════════════╣\n');
+fprintf('║  RMS Error:          %.4f V                       ║\n', rms_error_alpha);
+fprintf('║  Tracking Accuracy:  %.2f%%                       ║\n', tracking_alpha);
+fprintf('║  Control Effort:     %.4f                         ║\n', rms(du_alpha(nin:end)));
+fprintf('╚═══════════════════════════════════════════════════════╝\n\n');
+
+fprintf('╔═══════════════════════════════════════════════════════╗\n');
+fprintf('║              β-AXIS PERFORMANCE                       ║\n');
+fprintf('╠═══════════════════════════════════════════════════════╣\n');
+fprintf('║  RMS Error:          %.4f V                       ║\n', rms_error_beta);
+fprintf('║  Tracking Accuracy:  %.2f%%                       ║\n', tracking_beta);
+fprintf('║  Control Effort:     %.4f                         ║\n', rms(du_beta(nin:end)));
+fprintf('╚═══════════════════════════════════════════════════════╝\n\n');
+
+fprintf('╔═══════════════════════════════════════════════════════╗\n');
+fprintf('║           COMBINED αβ PERFORMANCE                     ║\n');
+fprintf('╠═══════════════════════════════════════════════════════╣\n');
+fprintf('║  Total RMS Error:    %.4f V                       ║\n', rms_total);
+fprintf('╚═══════════════════════════════════════════════════════╝\n\n');
+
+%% Step 12: Comprehensive Plotting
+figure('Position', [50, 50, 1600, 1000]);
+
+time_idx = nin:nit;
+
+% Subplot 1: α-axis tracking
+subplot(3, 4, 1);
+plot(t(time_idx), saidas_alpha(time_idx), 'b-', 'LineWidth', 2); hold on;
+plot(t(time_idx), refs_alpha(time_idx), 'r--', 'LineWidth', 2);
+title('α-Axis Voltage Tracking');
+xlabel('Time [s]'); ylabel('V_α [V]');
+legend('Output', 'Reference', 'Location', 'best');
 grid on;
 
-% Subplot 2: Control input
-subplot(3,2,2);
-plot(t, entradas, 'g-', 'LineWidth', 2);
-title('Control Input');
-xlabel('Time [s]'); ylabel('Control Signal');
+% Subplot 2: β-axis tracking
+subplot(3, 4, 2);
+plot(t(time_idx), saidas_beta(time_idx), 'b-', 'LineWidth', 2); hold on;
+plot(t(time_idx), refs_beta(time_idx), 'r--', 'LineWidth', 2);
+title('β-Axis Voltage Tracking');
+xlabel('Time [s]'); ylabel('V_β [V]');
+legend('Output', 'Reference', 'Location', 'best');
 grid on;
 
-% Subplot 3: Control increments
-subplot(3,2,3);
-plot(t, du, 'm-', 'LineWidth', 2);
+% Subplot 3: DQ references
+subplot(3, 4, 3);
+plot(t, Vd_ref, 'b-', 'LineWidth', 2); hold on;
+plot(t, Vq_ref, 'r--', 'LineWidth', 2);
+title('DQ Reference Voltages');
+xlabel('Time [s]'); ylabel('Voltage [V]');
+legend('V_d', 'V_q', 'Location', 'best');
+grid on;
+
+% Subplot 4: αβ vector trajectory
+subplot(3, 4, 4);
+plot_idx = nin:5:nit;
+plot(entradas_alpha(plot_idx), entradas_beta(plot_idx), 'bo', 'MarkerSize', 3); hold on;
+plot(refs_alpha(plot_idx), refs_beta(plot_idx), 'rx', 'MarkerSize', 4);
+theta_c = 0:0.01:2*pi;
+plot(V_ref_peak*cos(theta_c), V_ref_peak*sin(theta_c), 'k--');
+title('αβ Vector Trajectory');
+xlabel('V_α [V]'); ylabel('V_β [V]');
+legend('GPC Output', 'Reference', 'Max Circle', 'Location', 'best');
+axis equal; grid on;
+
+% Subplot 5: α control input
+subplot(3, 4, 5);
+plot(t(time_idx), entradas_alpha(time_idx), 'g-', 'LineWidth', 2);
+title('α-Axis Control Input');
+xlabel('Time [s]'); ylabel('u_α [V]');
+grid on;
+
+% Subplot 6: β control input
+subplot(3, 4, 6);
+plot(t(time_idx), entradas_beta(time_idx), 'm-', 'LineWidth', 2);
+title('β-Axis Control Input');
+xlabel('Time [s]'); ylabel('u_β [V]');
+grid on;
+
+% Subplot 7: α error
+subplot(3, 4, 7);
+plot(t(time_idx), error_alpha(time_idx), 'r-', 'LineWidth', 2);
+title('α-Axis Tracking Error');
+xlabel('Time [s]'); ylabel('Error [V]');
+grid on;
+
+% Subplot 8: β error
+subplot(3, 4, 8);
+plot(t(time_idx), error_beta(time_idx), 'r-', 'LineWidth', 2);
+title('β-Axis Tracking Error');
+xlabel('Time [s]'); ylabel('Error [V]');
+grid on;
+
+% Subplot 9: PWM signals
+subplot(3, 4, 9);
+zoom_start = round(0.05/Ts);
+zoom_end = round(0.052/Ts);
+t_zoom = t(zoom_start:zoom_end);
+plot(t_zoom, pwm_a(zoom_start:zoom_end), 'r', 'LineWidth', 2); hold on;
+plot(t_zoom, pwm_b(zoom_start:zoom_end), 'g', 'LineWidth', 2);
+plot(t_zoom, pwm_c(zoom_start:zoom_end), 'b', 'LineWidth', 2);
+title('PWM Signals (50-52 ms)');
+xlabel('Time [s]'); ylabel('Duty Cycle');
+legend('Phase A', 'Phase B', 'Phase C', 'Location', 'best');
+grid on; ylim([-0.1, 1.1]);
+
+% Subplot 10: Control increments
+subplot(3, 4, 10);
+plot(t(time_idx), du_alpha(time_idx), 'b-', 'LineWidth', 1.5); hold on;
+plot(t(time_idx), du_beta(time_idx), 'r-', 'LineWidth', 1.5);
 title('Control Increments');
 xlabel('Time [s]'); ylabel('\Delta u');
+legend('\Delta u_α', '\Delta u_β', 'Location', 'best');
 grid on;
 
-% Subplot 4: PWM signals (zoomed)
-subplot(3,2,4);
-t_zoom = t(1000:1100);
-plot(t_zoom, pwm_a(1000:1100), 'r', 'LineWidth', 2); hold on;
-plot(t_zoom, pwm_b(1000:1100), 'g', 'LineWidth', 2);
-plot(t_zoom, pwm_c(1000:1100), 'b', 'LineWidth', 2);
-plot(t_zoom, carrier(1000:1100), 'k--', 'LineWidth', 1);
-title('PWM Signals (Zoom)');
-xlabel('Time [s]'); ylabel('State');
-legend('PWM A', 'PWM B', 'PWM C', 'Carrier', 'Location', 'best');
-grid on;
-ylim([-0.1 1.1]);
-
-% Subplot 5: Tracking error
-subplot(3,2,5);
-error = saidas - refs;
-plot(t, error, 'r-', 'LineWidth', 2);
-title('Tracking Error');
-xlabel('Time [s]'); ylabel('Error');
+% Subplot 11: Total error
+subplot(3, 4, 11);
+plot(t(time_idx), total_error(time_idx), 'k-', 'LineWidth', 2);
+title('Total Vector Error |\vec{e}|');
+xlabel('Time [s]'); ylabel('Error [V]');
 grid on;
 
-% Subplot 6: Performance summary
-subplot(3,2,6);
-metrics = [steady_state_error, control_effort, max(abs(du)), rms(error(steady_start:end))];
-metric_names = {'SS Error', 'Control Effort', 'Max \Delta u', 'RMS Error'};
+% Subplot 12: Performance comparison
+subplot(3, 4, 12);
+metrics = [rms_error_alpha, rms_error_beta, tracking_alpha, tracking_beta];
+bar_labels = {'α RMS', 'β RMS', 'α Track%', 'β Track%'};
 bar(metrics);
-set(gca, 'XTickLabel', metric_names);
+set(gca, 'XTickLabel', bar_labels);
 title('Performance Metrics');
 ylabel('Value');
 grid on;
 
-sgtitle('GPC Control with PWM Modulation - 3-Phase VSI', 'FontSize', 14, 'FontWeight', 'bold');
+sgtitle('DUAL GPC + PWM: Independent αβ Tracking from DQ References', ...
+        'FontSize', 16, 'FontWeight', 'bold');
 
-%% Diofantina Function (Required for GPC)
+fprintf('Plotting complete!\n');
+
+%% Diophantine Function
 function [E, F] = diofantina(A, N1, N2)
-    % Diophantine equation solver for GPC
-    % Solves: 1 = E_j(z^{-1})A(z^{-1}) + z^{-j}F_j(z^{-1})
-    
     nA = length(A) - 1;
     
-    % Initialize F matrix
+    % Initialize F
     f = zeros(N2+1, nA);
-    f(1, 1) = 1;  % F_0 = 1
+    f(1, 1) = 1;
     
     % Calculate F polynomials
     for j = 1:N2
