@@ -17,7 +17,7 @@ lamnda_m = ((60)/(sqrt(3)*pi*P*1000))*Y_Vpk_krpm;
 
 // modulação
 fsw = 20000;
-Vdc = 200;
+Vdc = 96;
 Vtri = 5;
 
 kpwm = 1/Vtri;
