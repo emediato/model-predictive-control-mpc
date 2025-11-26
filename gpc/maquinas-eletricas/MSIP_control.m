@@ -16,7 +16,7 @@ J = 0.03877;        % Inércia do rotor [kg.m²]
 B = 0.0194;         % Coeficiente de atrito [N.m.s]
 
 % Parâmetros do sistema de controle
-V_battery = 96;     % Tensão da bateria [V]
+V_battery = 250;     % Tensão da bateria [V]
 V_in = 5;           % Tensão de entrada do modulador [V]
 K_PWM = 1/V_in;     % Ganho do modulador PWM
 K_r = V_battery;    % Ganho do inversor (tensão CC)
@@ -77,11 +77,11 @@ disp('wziq rad/s:');
 wziq
 
 tau_wziq = 1 / wziq;
-
+tau_wziq
 FTLA_nc_iq_at_wc = sqrt(-1); 
 
 % Cálculo do ganho kc
-k_c_iq = wciq / (sqrt(wciq^2 + wziq^2) * mag_wc);
+k_c_iq = wciq / (sqrt((wciq^2) + wziq^2) * mag_wc);
 k_c_iq
 kc_iq = wciq / (sqrt(wciq^2 + wziq^2) * angle(FTLA_nc_iq_at_wc)*mag)
 kc_iq
@@ -243,7 +243,7 @@ fprintf('\nÂngulo da FTLA_nc em w_cn: %.2f°\n', phase_wcn);
 
 % Cálculo do zero do compensador
 w_zn = w_cn / tan(M_Phi - pi/2 - phase_wcn_rad);
-
+tau_z_mi = 1 / w_zn;
 % Cálculo do ganho do compensador
 K_cn = (w_cn / sqrt(w_cn^2 + w_zn^2)) * (1 / abs(mag_wcn));
 
@@ -315,4 +315,54 @@ fprintf('  Margem de Fase: %.2f° @ %.2f rad/s\n', Pm_nc_N, Wcp_nc_N);
 fprintf('\nSistema COMPENSADO:\n');
 fprintf('  Margem de Ganho: %.2f dB @ %.2f rad/s\n', 20*log10(Gm_c_N), Wcg_c_N);
 fprintf('  Margem de Fase: %.2f° @ %.2f rad/s\n', Pm_c_N, Wcp_c_N);
+%%
+
+ tf2psim(FTMF_nc_iq)
+ tf2psim(FTMF_nc_N)
+
+
+function tf2psim(G)
+% TF2PSIM  Converte uma função de transferência MATLAB (tf)
+%          para o formato do bloco Transfer Function do PSIM.
+%
+% Uso:
+%     G = tf(num, den);
+%     tf2psim(G);
+%
+% Resultado:
+%     - Gain
+%     - Coef. Bn..B0
+%     - Coef. An..A0
+
+    % Extrai numerador e denominador
+    [num, den] = tfdata(G, 'v');
+
+    % Normaliza o denominador para que An = 1
+    An0 = den(1);
+    num_n = num / An0;
+    den_n = den / An0;
+
+    % O gain passa a ser 1, numerador já incorporado
+    Gain = 1;
+
+    % Exibição formatada
+    fprintf("\n=========== PSIM FORMAT ===========\n");
+    fprintf("Gain:\n");
+    fprintf("    %.6f\n\n", Gain);
+
+    fprintf("Coeff. Bn..B0 (numerador):\n");
+    fprintf("    ");
+    fprintf("%.6f  ", num_n);
+    fprintf("\n\n");
+
+    fprintf("Coeff. An..A0 (denominador):\n");
+    fprintf("    ");
+    fprintf("%.6f  ", den_n);
+    fprintf("\n Ordem = ");
+    ordem_den = length(den) - 1   % ordem do denominador
+    ordem_num = length(num) - 1   % ordem do numerador
+
+    fprintf("====================================\n\n");
+end
+
 
