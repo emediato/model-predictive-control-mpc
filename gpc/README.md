@@ -34,6 +34,52 @@ https://www.researchgate.net/publication/346027016_DISSERTACAO_-_Analise_e_Conce
 
 ## GPC
 
+F = [-R/L,  0;
+     0,    -R/L];
+
+G = [1/L,  0;
+     0,    1/L];
+```
+
+---
+
+## 5. Relação com PWM e Duty Cycles
+
+### **Hierarquia de Controle**
+```
+┌─────────────────────────────────────┐
+│   GPC (Camada Superior)             │
+│   Manipula: Vd*, Vq* [V]            │
+│   Controla: Id, Iq [A]              │
+└──────────┬──────────────────────────┘
+           │
+           ▼
+┌─────────────────────────────────────┐
+│   Transformada Inversa de Park      │
+│   dq → αβ: [Vd*,Vq*] → [Vα*,Vβ*]   │
+└──────────┬──────────────────────────┘
+           │
+           ▼
+┌─────────────────────────────────────┐
+│   Transformada Inversa de Clarke    │
+│   αβ → abc: [Vα*,Vβ*] → [Va*,Vb*,Vc*]│
+└──────────┬──────────────────────────┘
+           │
+           ▼
+┌─────────────────────────────────────┐
+│   Modulador PWM (Camada Inferior)   │
+│   Converte tensões em duty cycles:  │
+│   [Va*,Vb*,Vc*] → [da, db, dc]      │
+│   da = (Va* + Vdc/2) / Vdc          │
+└──────────┬──────────────────────────┘
+           │
+           ▼
+┌─────────────────────────────────────┐
+│   Conversor (Chaves + Filtros)      │
+│   Aplica pulsos PWM → Tensões reais │
+└─────────────────────────────────────┘
+
+
 #### 13 May 2025. Generalized Predictive Control for a Single-Phase, Three-Level Voltage Source Inverter Single-phase T-type NPC VSI
 Diego Naunay1,Paul Ayala2, Josue Andino3,Wilmar Martinez and Diego Arcos-Aviles2
 https://www.mdpi.com/1996-1073/18/10/2541
