@@ -650,7 +650,8 @@ t = 0:1/fs:Tsim;
 f0 = 60; omega = 2*pi*f0;
 
 % carrier triangular (centred -1..1)
-carrier = sawtooth(2*pi*fsw*t, 0.5); % triangular entre -1 e 1
+%carrier = sawtooth(2*pi*fsw*t, 0.5); % triangular entre -1 e 1
+carrier = 0.5 + 0.5*sawtooth(2*pi*fsw*t, 0.5);  % Triangular [0,1]
 
 u_d_array = saidas(1,ind);
 u_q_array = saidas(2,ind);
@@ -685,14 +686,14 @@ for k=1:ind
         va = vabc(1); vb = vabc(2); vc = vabc(3);
 
         % modulation indices (SPWM)
-        ma_i = 2*va / Vdc;
-        mb_i = 2*vb / Vdc;
-        mc_i = 2*vc / Vdc;
+        ma_i = 0.5*va / Vdc;
+        mb_i = 0.5*vb / Vdc;
+        mc_i = 0.5*vc / Vdc;
 
         % limit
-        ma_i = max(min(ma_i,1),-1);
-        mb_i = max(min(mb_i,1),-1);
-        mc_i = max(min(mc_i,1),-1);
+        ma_i = max(min(ma_i,1),0);
+        mb_i = max(min(mb_i,1),0);
+        mc_i = max(min(mc_i,1),0);
 
         % store
         va_ref(idxs(jj)) = va; vb_ref(idxs(jj)) = vb; vc_ref(idxs(jj)) = vc;
@@ -718,6 +719,10 @@ ylabel('mod indices');
 subplot(3,1,3); 
 plot(t,ga,'b',t,gb,'r',t,gc,'g','LineWidth',1);
 ylabel('gates (0/1)'); xlabel('time (s)')
+title(sprintf(['Horizontes: Nu=[%d %d], N1=[%d %d], N2=[%d %d], ', ...
+               'delta=[%.4f %.4f], lambda=[%.4f %.4f]'], ...
+               Nu(1), Nu(2), N1(1), N1(2), N2(1), N2(2), ...
+               delta(1), delta(2), lambda(1), lambda(2)));
 
 % 
 
@@ -742,9 +747,9 @@ plot(t(1:l),saidasSFF(2,ind),'Color',[0 0.4470 0.7410],'LineWidth',tamlinha,'Col
 plot(t(1:l),saidasCFF(2,ind),'--','Color',[1 0 0],'LineWidth',tamlinha,'Color',cores(2,:))
 
 cores = summer(4);
-plot(t(1:l),refs(1,ind),'-.','Color',[0 0 0],'LineWidth',tamlinha,'Color',cores(3,:))
+plot(t(1:l),refs(1,ind),'-.','Color',[0 0 0],'LineWidth',tamlinha-3,'Color',cores(3,:))
 
-plot(t(1:l),refs(2,ind),'-.','Color',[0 0 0],'LineWidth',tamlinha,'Color',cores(4,:))
+plot(t(1:l),refs(2,ind),'-.','Color',[0 0 0],'LineWidth',tamlinha-3,'Color',cores(4,:))
 
 legend('C_l(z^{-1})=1','C_l(z^{-1})\neq 1', 'Refs',  'Location','SouthEast')
 
@@ -752,6 +757,11 @@ ta1 = annotation('textarrow');
 ta1.String = 'y_1';
 ta2 = annotation('textarrow');
 ta2.String = 'y_2';
+
+title(sprintf(['Horizontes: Nu=[%d %d], N1=[%d %d], N2=[%d %d], ', ...
+               'delta=[%.4f %.4f], lambda=[%.4f %.4f]'], ...
+               Nu(1), Nu(2), N1(1), N1(2), N2(1), N2(2), ...
+               delta(1), delta(2), lambda(1), lambda(2)));
 
 
 tamletra=12
@@ -794,7 +804,7 @@ ta2.Position = [0.39475 0.7919 0.0471 -0.0516];
 %u1
 ta3.Position = [0.25382 0.3381 -0.0529 0.0568];
 %u2
-ta4.Position = [0.3961 0.18084 0.0629 0.0697];
+ta4.Position = [0.3961 0.10084 0.0629 0.0697];
 
 
 %%
@@ -959,5 +969,4 @@ function [E,F] = diofantina(A,N1,N2)
     
     E = E(N1:N2,:);
 end
-
 
