@@ -1,4 +1,6 @@
-
+%%% Exemplo duplo integrador do capítulo GPC SISO
+%%% cálculo do ganho irrestrito
+%%% cálculo das funções de transferência equivalentes.
 
 clear all, 
 close all, 
@@ -139,8 +141,8 @@ delta = [1,1]./Ny;  % ponderação dos erros futuros
 
 af = 0; % polo do filtro de referência
 
-Umax = [1,1];
-Umin = [-1,-1];
+Umax = [30,30];
+Umin = [-30,-30];
 dumax = [.9,.9];
 dumin = -dumax;
 
@@ -361,6 +363,13 @@ plot(refs(:,nin+1:nit)','-.','LineWidth',tamlinha,'Color',cores(3,:))
 ylabel('Controladas','FontSize', tamletra)
 hl0 = legend('y_1','y_2','Ref.','Location','NorthEast')
 
+title(sprintf(['Horizontes: Nu=[%d %d], N1=[%d %d], N2=[%d %d], ', ...
+               'delta=[%.4f %.4f], lambda=[%.4f %.4f]',...
+               'Umax = [%d %d]', 'Umax = [%d %d]', 'dumax = [%d %d]'], ...
+               Nu(1), Nu(2), N1(1), N1(2), N2(1), N2(2), ...
+               delta(1), delta(2), lambda(1), lambda(2), ...
+               Umax(1), Umax(2), Umin(1), Umin(2), dumax(1), dumax(2)) );
+
 
 set(h, 'FontSize', tamletra);
 grid on
@@ -399,8 +408,3 @@ set(h, 'FontSize', tamletra);
 hl0.Position = [0.8220 0.6325 0.1357 0.1619];
 hl1.Position = [0.8274 0.4933 0.1161 0.1202];
 % print('exemploColunaMentanol2','-depsc')
-
-
-
-
-
