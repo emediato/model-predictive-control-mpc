@@ -811,7 +811,7 @@ ta4.Position = [0.3961 0.10084 0.0629 0.0697];
 % plots rápidos
 figure;
 x=3;
-tamlinha=2
+tamlinha=1;
 subplot(x,1,1);
 plot(ga, 'LineWidth',tamlinha,'Color',cores(1,:)); hold on;
 xlabel('k'), ylabel(' switch A ')
