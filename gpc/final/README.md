@@ -1,5 +1,12 @@
 diagrama fluxo
 
+
+A. A. Ahmed, B. K. Koh, and Y. I. Lee, “A comparison of finite control
+set and continuous control set model predictive control schemes for speed
+control of induction motors,” IEEE Trans. Ind. Informat., vol. 14, no. 4,
+pp. 1334–1346, Apr. 2018, doi: 10.1109/TII.2017.2758393.
+
+
 ## IMPLEMENTAÇÃO PRÁTICA NO MATLAB
 
 ```matlab
