@@ -5,12 +5,9 @@
 
 clear; clc; close all;
 
-fprintf('╔═══════════════════════════════════════════════════════════╗\n');
-fprintf('║   SIMULAÇÃO GPC MIMO + PWM + MODELO DINÂMICO RL          ║\n');
-fprintf('╚═══════════════════════════════════════════════════════════╝\n\n');
 
 %% PARÂMETROS DO SISTEMA
-%==========================================================================
+%*******************************************************
 % Temporização
 f = 60;                 % Frequência fundamental [Hz]
 f_pwm = 10000;          % Frequência PWM [Hz]  
@@ -35,7 +32,7 @@ fprintf('Carga:     R = %.1f Ω, L = %.1f mH\n', R_load, L_load*1e3);
 fprintf('Vdc:       %.1f V\n\n', Vdc);
 
 %% MATRIZES DE TRANSFORMAÇÃO
-%==========================================================================
+%*******************************************************
 % Clarke inversa (αβ → abc)
 K_clarke_inv = [1,        0;
                 -1/2,     sqrt(3)/2;
@@ -47,7 +44,7 @@ K_park = @(theta) (2/3) * [cos(theta),   cos(theta - 2*pi/3),   cos(theta - 4*pi
                            -sin(theta), -sin(theta - 2*pi/3), -sin(theta - 4*pi/3)];
 
 %% VETORES DE TEMPO E INICIALIZAÇÃO
-%==========================================================================
+%*******************************************************
 t_pwm = 0:Ts_pwm:Tsim;               % Vetor de tempo PWM
 N_pwm = length(t_pwm);
 t_control = 0:Ts_control:(Tsim-Ts_control);  % Vetor de tempo controle
@@ -80,14 +77,14 @@ PWM_b = zeros(1, N_pwm);
 PWM_c = zeros(1, N_pwm);
 
 %% GERAÇÃO DA PORTADORA TRIANGULAR
-%==========================================================================
+%*******************************************************
 % Gerar portadora diretamente em [0, 1] para evitar conversões
 carrier = 0.5 + 0.5*sawtooth(2*pi*f_pwm*t_pwm, 0.5);  % Triangular [0,1]
 
 fprintf('\n═══ INICIANDO CONVERSÃO dq → abc + PWM ═══\n');
 
 %% LOOP PRINCIPAL: dq → αβ → abc → PWM
-%==========================================================================
+%*******************************************************
 ratio = f_pwm / f_control;  % 10 amostras PWM por amostra GPC
 
 for k_ctrl = 1:N_control
@@ -175,7 +172,7 @@ end
 fprintf('✅ Conversão e PWM concluídos!\n');
 
 %% VERIFICAÇÃO DOS ÍNDICES DE MODULAÇÃO
-%==========================================================================
+%*******************************************************
 fprintf('\n═══ VERIFICAÇÃO DE ÍNDICES ═══\n');
 fprintf('ma: [%.4f, %.4f]\n', min(ma), max(ma));
 fprintf('mb: [%.4f, %.4f]\n', min(mb), max(mb));
@@ -190,7 +187,7 @@ else
 end
 
 %% SIMULAÇÃO DINÂMICA DAS CORRENTES (MODELO RL CORRETO)
-%==========================================================================
+%*******************************************************
 fprintf('\n═══ SIMULANDO CORRENTES (Modelo RL) ═══\n');
 
 % ─────────────────────────────────────────────────────────────────────
@@ -237,7 +234,7 @@ Ic_filt = filtfilt(b_filt, a_filt, Ic);
 fprintf('   Ripple médio: %.4f A\n', mean(abs(Ia - Ia_filt)));
 
 %% TRANSFORMADA PARA dq (MEDIÇÃO)
-%==========================================================================
+%*******************************************************
 fprintf('\n═══ TRANSFORMANDO CORRENTES → dq ═══\n');
 
 Id_meas = zeros(1, N_control);
@@ -265,7 +262,7 @@ fprintf('   Id: [%.4f, %.4f] A\n', min(Id_meas), max(Id_meas));
 fprintf('   Iq: [%.4f, %.4f] A\n', min(Iq_meas), max(Iq_meas));
 
 %% REFERÊNCIAS TEÓRICAS (PARA COMPARAÇÃO)
-%==========================================================================
+%*******************************************************
 % Em regime permanente senoidal: V = (R + jωL)*I
 % Portanto: I = V / (R + jωL)
 
@@ -277,7 +274,7 @@ Id_ref_theory = Vd_gpc / Z_magnitude;
 Iq_ref_theory = Vq_gpc / Z_magnitude;
 
 %% MÉTRICAS DE DESEMPENHO
-%==========================================================================
+%*******************************************************
 fprintf('\n═══ MÉTRICAS DE DESEMPENHO ═══\n');
 
 % THD (Total Harmonic Distortion) da corrente fase A
@@ -308,7 +305,7 @@ fprintf('Erro RMS Id:        %.4f A\n', erro_Id);
 fprintf('Erro RMS Iq:        %.4f A\n', erro_Iq);
 
 %% PLOTAGEM COMPLETA
-%==========================================================================
+%*******************************************************
 fprintf('\n═══ GERANDO GRÁFICOS ═══\n');
 
 figure('Position', [50, 50, 1600, 1200], 'Name', 'Simulação Completa GPC+PWM');
