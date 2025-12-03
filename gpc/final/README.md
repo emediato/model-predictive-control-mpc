@@ -1,13 +1,24 @@
 diagrama fluxo
 
 
+
+
 A. A. Ahmed, B. K. Koh, and Y. I. Lee, “A comparison of finite control
 set and continuous control set model predictive control schemes for speed
 control of induction motors,” IEEE Trans. Ind. Informat., vol. 14, no. 4,
 pp. 1334–1346, Apr. 2018, doi: 10.1109/TII.2017.2758393.
 
+![image](https://github.com/user-attachments/assets/bf15bf7a-c36b-47e8-aded-1342dd94be4c)
 
-## IMPLEMENTAÇÃO PRÁTICA NO MATLAB
+Figure from  [1]: S. Kouro, P. Cortés, R. Vargas, U. Ammann, and J. Rodríguez, “Model predictive control – a simple and powerful method to control power converters,” IEEE Transactions on Industrial Electronics, vol. 56, no. 6, pp. 1826–1838, June 2009. 
+
+<img width="2474" height="1514" alt="image" src="https://github.com/user-attachments/assets/bf85ed7b-563b-4c31-b64b-2709050ac735" />
+
+
+
+
+
+## IMPLEMENTAÇÃO PRÁTICA GPC NO MATLAB
 
 ```matlab
 %% IMPLEMENTAÇÃO PRÁTICA NO MATLAB
