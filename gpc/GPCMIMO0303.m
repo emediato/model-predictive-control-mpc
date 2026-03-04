@@ -155,7 +155,7 @@ dumin = -dumax;
 ymax = [40,30];
 ymin = [0,0];
 
-psi = [1000 1000 1000]; % ponderação das variáveis de folga
+psi = [0 0 1000 1000 1000]; % ponderação das variáveis de folga
 
 
 %% obtenção das matrizes do SSMPC
@@ -327,15 +327,29 @@ Rbar = [T;
         -G];
 
 
+% 
+% rbar1 = [dumax*ones(Nu,1);
+%          -dumin*ones(Nu,1)];
 
-rbar1 = [dumax*ones(Nu,1);
-         -dumin*ones(Nu,1)];
+
+% %%% montagem das matrizes de restrição
+% rbar = repelem(umax'-entradas(:,k-1),Nu');
+% rbar = [rbar;
+%         repelem(-umin'+entradas(:,k-1),Nu');
+%         ([repelem(ymax(3),N(3),1);repelem(ymax(4),N(4),1)]-f(sum(N(1:2))+1:end));
+%         ([repelem(-ymin(3),N(3),1);repelem(-ymin(4),N(4),1)]+f(sum(N(1:2))+1:end));
+%         ];
+% fqp = [fqp1*(R-f); zeros(2,1)];
+% X = quadprog(Hqp,fqp,Rbar,rbar);
+% for i=1:m
+%     du(i,k) = X(sum(Nu(1:i-1))+1,1);
+% end
 
 
+y_rbarmax = [ymax']*ones(N2(1)-N1(1)+1,1);
 
-y_rbarmax = [ymax']*ones(N2-N1+1,1);
-y_rbarmin = [ymin']*ones(N2-N1+1,1);
-
+y_rbarmin = [ymin(1)]*ones(N2(2)-N1(2)+1,1);
+y_rbarmin = [ymin(2)]*ones(N2(2)-N1(2)+1,1);
 
 
 %% vetores de simulação
@@ -376,6 +390,8 @@ for k=nin+1:nit
         + F*[estados(:,k);
            estados(:,k-1)];
     
+    % rbar = repelem(Umax'-entradas(:,k-1),Nu')
+
     %%% cálculo das matrizes de restrição
     rbarmax = repmat([Umax'-entradas(:,k-1)],max(Nu),1);
     rbarmin = repmat([-Umin'+entradas(:,k-1)],max(Nu),1);
