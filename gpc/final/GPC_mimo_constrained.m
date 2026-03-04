@@ -13,7 +13,7 @@ Vd = 60;        % Tensão DC-link [V]
 Vdc = Vd;       % Tensão DC-link
 R = 22.5;       % Resistência [Ω]
 L = 0.1;       % Indutância [H]
-fs = 10e3;        % 20 kHz 
+fs = 20e3;        % 20 kHz 
 f_control_gpc = 1e3;        % 1 kHz
 
 Ts_pwm = 1/fs;
@@ -137,22 +137,27 @@ Cq = sys.D(:,m+1:end);
 %% Sintonia do SSMPC
 
 N1 = [2,3]; %% horizonte de predição inicial - incluir atraso - dimensão 1 x n
-N2 = [30,30]; %% horizonte predição 
+N2 = [20,30]; %% horizonte predição 
 Ny = N2-N1+1;
 Nu = [5,5,5]; %% horizonte de controle - dimensão 1 x m 
 Nq = 1; %% horizonte de perturbação - dimensão 1 x mq
 
-lambda = [1,1,1]./Nu; % ponderação do incremento de controle
-delta = [5,5]./Ny;  % ponderação dos erros futuros
+delta = [8,8]./Ny;  % ponderação dos erros futuros
+lambda = [2,2,1]./Nu; % ponderação do incremento de controle
 
 af = 0; % polo do filtro de referência
 
-Umax = [15, 15, 15];
-Umin = [-15,-15, -15];
+Umax = [20, 20, 20];
+
+Umin = -Umax;
 dumax = [10, 10, 10];
 dumin = -dumax;
-ymax = [40,30];
+
+ymax = [35,25];
 ymin = [0,0];
+
+psi = [0 0 1000 1000 1000]; % ponderação das variáveis de folga
+
 
 %% obtenção das matrizes do SSMPC
 
@@ -232,6 +237,12 @@ for i=1:max(Nu)
     Qu = blkdiag(Qu,Qui);
 end
 
+%%% matrizes do problema de otimização
+Qpsi = [];
+for i=3:4
+    Qpsi = blkdiag(Qpsi,psi(i));
+end
+
 
 %%% Selecionando as parcelas das matrizes de interesse de acordo com os
 %%% horizontes estabelecidos na sintonia.
@@ -277,6 +288,11 @@ Qe = Qe(indl,indl);
 Kmpc = (G'*Qe*G+Qu)\(G'*Qe);
 Kmpc1 = Kmpc(1:m,:);
 
+% 
+% Hqp = blkdiag(2*(G'*Qe*G+Qu),2*Qpsi);
+% fqp1 = -2*G'*Qe;
+
+
 Hqp = 2*(G'*Qe*G+Qu);
 fqp1 = -2*G'*Qe;
 
@@ -295,9 +311,49 @@ end
 
 T = T(indc,indc);
 
-Rbar = [T;
-        -T];
+% Rbar = [T;
+%         -T];
 
+Rbar = [];
+for i=1:m
+    Rbar = blkdiag(Rbar,tril(ones(Nu(i))));
+end
+Rbar = [Rbar;-Rbar];
+
+
+
+Rbar = [T;
+        -T;
+        G;
+        -G];
+
+
+% 
+% rbar1 = [dumax*ones(Nu,1);
+%          -dumin*ones(Nu,1)];
+
+
+% %%% montagem das matrizes de restrição
+% rbar = repelem(umax'-entradas(:,k-1),Nu');
+% rbar = [rbar;
+%         repelem(-Umin'+entradas(:,k-1),Nu');
+%         ([repelem(ymax(3),N(3),1);repelem(ymax(4),N(4),1)]-f(sum(N(1:2))+1:end));
+%         ([repelem(-ymin(3),N(3),1);repelem(-ymin(4),N(4),1)]+f(sum(N(1:2))+1:end));
+%         ];
+% fqp = [fqp1*(R-f); zeros(2,1)];
+% X = quadprog(Hqp,fqp,Rbar,rbar);
+% for i=1:m
+%     du(i,k) = X(sum(Nu(1:i-1))+1,1);
+% end
+ 
+y_rbarmax = [repelem(ymax(1),Ny(1),1);repelem(ymax(2),Ny(2),1)]
+y_rbarmin = [repelem(-ymin(1),Ny(1),1);repelem(-ymin(2),Ny(2),1)]
+% 
+% y_rbarmax = [ymax']*ones(N2(1)-N1(1)+1,1);
+% 
+% y_rbarmin = [ymin(1)]*ones(N2(2)-N1(2)+1,1);
+% y_rbarmin = [ymin(2)]*ones(N2(2)-N1(2)+1,1);
+% 
 
 %% vetores de simulação
 nin = 10; % iteração inicial (para inicialização correta)
@@ -337,25 +393,54 @@ for k=nin+1:nit
         + F*[estados(:,k);
            estados(:,k-1)];
     
+    % rbar = repelem(Umax'-entradas(:,k-1),Nu')
+
     %%% cálculo das matrizes de restrição
     rbarmax = repmat([Umax'-entradas(:,k-1)],max(Nu),1);
     rbarmin = repmat([-Umin'+entradas(:,k-1)],max(Nu),1);
+
+
     rbar = [rbarmax(indc,:);
-             rbarmin(indc,:)];
+             rbarmin(indc,:);
+             y_rbarmax - f ;
+             y_rbarmin + f ];
     
+    % %%% cálculo das matrizes de restrição
+    % rbar = [rbar1;
+    %          (Umax-entradas(1,k-1))*ones(Nu,1);
+    %          (-Umin+entradas(1,k-1))*ones(Nu,1);
+    %          y_rbarmax - f ;
+    %          y_rbarmin + f ];
+    % 
     fqp = fqp1*(R-f);
-    
     %%% cálculo do incremento de controle ótimo
     % duOti= Kmpc1*(R-f);
     duOti = quadprog(Hqp,fqp,Rbar,rbar,[],[],LB,UB);
+     
+
+         
+    if isempty(duOti)
+        if k == 1
+            du(1:m,k)  = [0];
+        else
+            du(1:m,k) = du(1:m,k-1)
+        end
+    else
+        du(1:m,k) = duOti(1:m);
+    end
+
+
     du(1:m,k) = duOti(1:m);
+
     
     %%% cálculo do sinal de controle ótimo
     entradas(:,k) = du(:,k)+entradas(:,k-1);
 
-    if (k == 30) || (k == 120) || (k == 150)
+
+    if k > 10 
+    % if (k == 30) || (k == 120) || (k == 150)
         i_init = 10; % iteração inicial (para inicialização correta)
-        i_sim = i_init + 200; % número de iterações da simulação
+        i_sim = i_init + 500; % número de iterações da simulação
         out = aux; %i_alfa, i_beta
 
         in = entradas(:,k);
@@ -412,33 +497,40 @@ plot(refs(:,nin+1:nit)','-.','LineWidth',tamlinha,'Color',cores(9,:))
 ylabel('Controladas','FontSize', tamletra)
 hl0 = legend('y_1','y_2','Refs.','Location','SouthEast')
 
-title(sprintf(['Horizontes: Nu=[%d %d], N1=[%d %d], N2=[%d %d], ', ...
-               'delta=[%.4f %.4f], lambda=[%.4f %.4f],',...
-               'Umax = [%d %d],', 'Umin = [%d %d],', 'dumax = [%d %d],','dumin = [%d %d]'], ...
+set(gcf,'Color','white');
+
+
+set(gcf, 'Units','pixels');
+set(gcf, 'Position',[400 400 1400 800]);  % largura grande para caber texto
+title(sprintf(['Horizontes: Nu = [%d %d], N1 = [%d %d], N2 = [%d %d], ', ...
+               'delta = [%.4f %.4f], lambda = [%.4f %.4f],\n',...
+               'Umax = [%d %d],', ' Umin = [%d %d],', ' dumax = [%d %d],',' dumin = [%d %d]',', Ymax = [%d %d]',', Ymin = [%d %d]'], ...
                Nu(1), Nu(2), N1(1), N1(2), N2(1), N2(2), ...
                delta(1), delta(2), lambda(1), lambda(2), ...
-               Umax(1), Umax(2), Umin(1), Umin(2), dumax(1), dumax(2), dumin(1), dumin(2)) );
+               Umax(1), Umax(2), Umin(1), Umin(2), dumax(1), dumax(2), ...
+               dumin(1), dumin(2), ymax(1), ymax(2), ymin(1), ymin(2)), 'FontSize', tamletra);
+
+
+
 % for export fig
 sprintf(['HorizontesNu=%d %d, N1=%d %d, N2=%d %d, ', ...
                'delta=%.4f %.4f, lambda=%.4f %.4f',...
-               'Umax = %d %d', 'Umin = %d %d', 'dumax = %d %d','dumin = %d %d'], ...
+               'Umax = %d %d', 'Umin = %d %d', 'dumax = %d %d','dumin = [%d %d]','ymax = [%d %d]','ymin = [%d %d]'], ...
                Nu(1), Nu(2), N1(1), N1(2), N2(1), N2(2), ...
                delta(1), delta(2), lambda(1), lambda(2), ...
-               Umax(1), Umax(2), Umin(1), Umin(2), dumax(1), dumax(2), dumin(1), dumin(2))
+               Umax(1), Umax(2), Umin(1), Umin(2), dumax(1), dumax(2), dumin(1),  dumin(2), ymax(1), ymax(2), ymin(1), ymin(2))
+
 
 
 set(h, 'FontSize', tamletra);
 grid on
-
 h = subplot(3,1,2)
 plot(entradas(1,nin+1:nit)','LineWidth',tamlinha,'Color',cores(5,:))
 hold on
 plot(entradas(2,nin+1:nit)','LineWidth',tamlinha,'Color',cores(2,:))
 % plot(entradas(3,nin+1:nit)','LineWidth',tamlinha,'Color',cores(3,:))
-
 ylabel('Manipuladas','FontSize', tamletra)
 hl1 = legend('u_1','u_2','Location','SouthEast')
-
 grid on
 set(h, 'FontSize', tamletra);
 % ylim([-5 5])
@@ -448,8 +540,8 @@ plot(du(1,nin+1:nit)','LineWidth',tamlinha,'Color',cores(5,:))
 hold on
 plot(du(2,nin+1:nit)','LineWidth',tamlinha,'Color',cores(2,:))
 % plot(du(3,nin+1:nit)','LineWidth',tamlinha,'Color',cores(3,:))
-
-hl2 = legend('\Delta u_1','\Delta u_2','Location','NorthEast')
+%hl2 = legend('\Delta u_1','\Delta u_2','Location','NorthEast')
+hl2 = legend('\Delta u_1','\Delta u_2','Location','SouthEast')
 
 
 ylabel('\Delta u','FontSize', tamletra)
@@ -457,6 +549,30 @@ xlabel('Tempo (segundos)','FontSize', tamletra)
 grid on
 % ylim([-5 5])
 set(h, 'FontSize', tamletra);
+
+
+
+nome_figura = sprintf( ...
+    'Horizontes_Nu=%d_%d__N1%d_%d__N2%d_%d_delta%.4f_%.4f_lambda%.4f_%.4f_Umax%d_%d_Umin%d_%d_dumax=%d_%d_dumin%d_%d_ymax=%d_%d_ymin%d_%d.png', ...
+    Nu(1), Nu(2), ...
+    N1(1), N1(2), ...
+    N2(1), N2(2), ...
+    delta(1), delta(2), ...
+    lambda(1), lambda(2), ...
+    Umax(1), Umax(2), ...
+    Umin(1), Umin(2), ...
+    dumax(1), dumax(2), ...
+    dumin(1), dumin(2), ...
+    ymax(1), ymax(2), ...
+    ymin(1), ymin(2));
+outDir = 'C:\Users\MEMOLIV\Desktop\New folder\';
+outPath = fullfile(outDir, nome_figura);   % monta C:\Users\...\New folder\Horizontes_...png
+
+exportgraphics(gcf, outPath, ...
+    'Resolution', 600, ...
+    'BackgroundColor', 'white');
+
+
 
 % h=subplot(3,1,3)
 % plot(t,erro(1:nit-N2-1),'LineWidth',tamlinha,'Color',cores(1,:))
@@ -474,7 +590,7 @@ set(h, 'FontSize', tamletra);
 %% aplicar PWM por alguns ciclos
 function [v_abc, duty, t_pwm] = applyPWM(in, out, i_init, i_sim, ...
                                            Ts_pwm, Ts_control, t_control, ...
-                                           fsw, Vdc, Nu, N1, N2, delta, lambda)
+                                           fsw,  Vdc, Nu, N1, N2, delta, lambda)
 
         % applyPWM(in, out, i_init, i_sim, Ts_pwm, Ts_control, t_control, fs, Vdc, Nu, N1, N2, delta, lambda)
         % in = cálculo do sinal de controle ótimo
@@ -496,6 +612,7 @@ function [v_abc, duty, t_pwm] = applyPWM(in, out, i_init, i_sim, ...
     % Park (abc → dq) - para medição de correntes
     K_park = @(theta) (2/3) * [cos(theta),   cos(theta - 2*pi/3),   cos(theta - 4*pi/3);
                                -sin(theta), -sin(theta - 2*pi/3), -sin(theta - 4*pi/3)];
+
 
     % Clark Transformation Matrix
     K = 2/3 * [1 -1/2 -1/2; 0 sqrt(3)/2 -sqrt(3)/2];
@@ -535,11 +652,17 @@ function [v_abc, duty, t_pwm] = applyPWM(in, out, i_init, i_sim, ...
     t_pwm = t_ctrl_janela(1) : Ts_pwm : t_ctrl_janela(end);
     n_pwm = length(t_pwm);
     
-    Tsim = 0.01;         % tempo de simulação (s)
-    
-    fs = 20000;         % taxa de amostragem para simulação dos sinais
+    Tsim = 0.1;         % tempo de simulação (s)
+    T = Tsim;            % Tempo total de simulação
+
+    fs = fsw/10;         % taxa de amostragem para simulação dos sinais
     t = 0:1/fs:Tsim;
     f0 = 60; omega = 2*pi*f0;
+    
+    Ts_pwm = 1/fs;
+      
+    t_pwm = 0:Ts_pwm:T;
+    t_sim = 0:1/fs:T;
 
     % Vetor | Estado     | v_ag        | v_bg         | v_cg
     % ------|------------|-------------|--------------|-------------
@@ -553,7 +676,7 @@ function [v_abc, duty, t_pwm] = applyPWM(in, out, i_init, i_sim, ...
     %  V7   | (1, 1, 1)  |      0      |      0       |      0       ← nulo
 
     % carrier triangular (centred -1..1)
-    % carrier = sawtooth(2*pi*fsw*t, 0.5); % triangular entre -1 e 1
+    % carrier = sawtooth(2*pi*fsw/*t, 0.5); % triangular entre -1 e 1
     carrier = 0.5 + 0.5*sawtooth(2*pi*fsw*t, 0.5);  % Triangular [0,1]
     
     % u_d_array = out(1)*ones(1,(length((ind))))
@@ -587,14 +710,13 @@ function [v_abc, duty, t_pwm] = applyPWM(in, out, i_init, i_sim, ...
         u_q = v_alphabeta_ref(2);
 
         t_start = (k-1)*Ts_control;
-        t_end = min(k*Ts_control, Tsim);
+        t_end = max(k*Ts_control, Tsim);
 
         idxs = find(t>=t_start & t < t_end);
     
         for jj = 1:length(idxs)
             ti = t(idxs(jj));
             theta = omega*ti;                 % ângulo instantâneo (ex.: grid angle)
-            fprintf('theta %.1f \n', theta);
 
             % inverse Park
             v_alpha =  cos(theta)*u_d - sin(theta)*u_q;
@@ -603,9 +725,7 @@ function [v_abc, duty, t_pwm] = applyPWM(in, out, i_init, i_sim, ...
             % inverse Clarke => va,vb,vc (fase-neutral references)
             vabc = K_inv * [v_alpha; v_beta];
             va = vabc(1); vb = vabc(2); vc = vabc(3);
-            fprintf('Vabc %.1f %.1f %.1f \n', va, vb, vc);
-            fprintf('Vabc %.1f %.1f %.1f \n', va, vb, vc);
-            fprintf('u_d %.1f u_q %.1f  \n', u_d, u_q);
+
 
             % modulation indices  
             ma_i = 0.5*va / Vdc;
@@ -653,35 +773,39 @@ function [v_abc, duty, t_pwm] = applyPWM(in, out, i_init, i_sim, ...
             gc(idxs(jj)) = mc_i > carrier_val;
 
             % va = vabc(1); vb = vabc(2); vc = vabc(3);
+            fprintf('theta %.1f \n', theta);
+            fprintf('Vabc %.1f %.1f %.1f \n', va, vb, vc);
+            fprintf('Vabc %.1f %.1f %.1f \n', va, vb, vc);
+            fprintf('u_d %.1f u_q %.1f  \n', u_d, u_q);
         end
     end
     
-    % plots rápidos
-    figure;
-    n_plots = 5;
-    subplot(n_plots,1,1); 
-    plot(t,va_ref,'b', t, vb_ref,'r', t, vc_ref,'g', 'LineWidth',5); 
-    ylabel('v^*_ph (V)'); 
-    legend('va^*','vb^*','vc^*')
-    
-    title(sprintf(['Horizontes: Nu=[%d %d], N1=[%d %d], N2=[%d %d], ', ...
-                   'delta=[%.4f %.4f], lambda=[%.4f %.4f]'], ...
-                   Nu(1), Nu(2), N1(1), N1(2), N2(1), N2(2), ...
-                   delta(1), delta(2), lambda(1), lambda(2)));
-
-    subplot(n_plots,1,2); plot(t,ma,t,mb,t,mc,'LineWidth',5);
-    ylabel('mod indices');
-
-    subplot(n_plots,1,3); 
-    plot(t,ga,'b','LineWidth',1);
-    ylabel('gates A (0/1)'); xlabel('time (s)');
-
-    subplot(n_plots,1,4); 
-    plot(t,gb,'r','LineWidth',1);
-    ylabel('gates B (0/1)'); xlabel('time (s)');
-
-    subplot(n_plots,1,5); 
-    plot(t,gc,'g','LineWidth',1);
-    %plot(t,ga,'b',t,gb,'r',t,gc,'g','LineWidth',1);
-    ylabel('gates C (0/1)'); xlabel('time (s)');
+%     % plots rápidos
+%     figure;
+%     n_plots = 5;
+%     subplot(n_plots,1,1); 
+%     plot(t,va_ref,'b', t, vb_ref,'r', t, vc_ref,'g', 'LineWidth',2); 
+%     ylabel('v^*_ph (V)'); 
+%     legend('va^*','vb^*','vc^*')
+%     
+%     title(sprintf(['Horizontes: Nu=[%d %d], N1=[%d %d], N2=[%d %d], ', ...
+%                    'delta=[%.4f %.4f], lambda=[%.4f %.4f]'], ...
+%                    Nu(1), Nu(2), N1(1), N1(2), N2(1), N2(2), ...
+%                    delta(1), delta(2), lambda(1), lambda(2)));
+% 
+%     subplot(n_plots,1,2); plot(t,ma,t,mb,t,mc,'LineWidth',2);
+%     ylabel('mod indices');
+% 
+%     subplot(n_plots,1,3); 
+%     plot(t,ga,'b','LineWidth',3);
+%     ylabel('gates A (0/1)'); xlabel('time (s)');
+% 
+%     subplot(n_plots,1,4); 
+%     plot(t,gb,'r','LineWidth',3);
+%     ylabel('gates B (0/1)'); xlabel('time (s)');
+% 
+%     subplot(n_plots,1,5); 
+%     plot(t,gc,'g','LineWidth',3);
+%     %plot(t,ga,'b',t,gb,'r',t,gc,'g','LineWidth',1);
+%     ylabel('gates C (0/1)'); xlabel('time (s)');
 end
