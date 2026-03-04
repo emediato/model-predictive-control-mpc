@@ -1,3 +1,7 @@
+https://github.com/treezao/Livro_mpc_codes/blob/main/Volume2/Capitulo3-DMC_GPC_MIMO/EstudoCaso3.4.3/gpc_4tanques_4.m
+
+
+
 ## Models from 
 
 rojas2021.pdf
