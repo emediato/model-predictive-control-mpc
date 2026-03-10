@@ -1,7 +1,6 @@
+https://github.com/treezao/Livro_mpc_codes/tree/main/Volume1/Capitulo4-GPC
+
 diagrama fluxo
-
-
-
 
 A. A. Ahmed, B. K. Koh, and Y. I. Lee, “A comparison of finite control
 set and continuous control set model predictive control schemes for speed
