@@ -13,6 +13,9 @@ S. Kouro, P. Cortés, R. Vargas, U. Ammann, and J. Rodríguez, “Model predicti
 
 
 
+## useful
+
+https://github.com/treezao/Livro_mpc_codes/blob/main/Volume2/Capitulo4-SSMPC/Exemplo4.7/exemploMotorDC_ssmpc.m
 
 
 ## IMPLEMENTAÇÃO PRÁTICA GPC NO MATLAB
