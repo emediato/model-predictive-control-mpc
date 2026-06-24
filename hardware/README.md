@@ -6,7 +6,7 @@ https://github.com/analogdevicesinc/hdl/tree/main/projects
 
 https://www.ianjohnston.com/index.php/projects/project-017-electronic-constant-current-dummy-load-v2-0
 https://github.com/rastrocchia46/eddy-current-brake-power-module/blob/main/images/Block%20Diagram.png
-
+https://www.ianjohnston.com/index.php/projects/project-017-electronic-constant-current-dummy-load-v2-0
 ## TRANSISTOR 
 
 Warren, James R., Kathryn Anne Rosowski, and David J. Perreault. “Transistor Selection and Design of a VHF DC-DC Power Converter.” IEEE Trans. Power Electron. 23, no. 1 (n.d.): 27–37. © 2007 IEEE
